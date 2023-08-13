@@ -9,4 +9,4 @@
 
 
 
-Q. Whats that ? [Arch Wiki](https://wiki.archlinux.org/title/Domain_name_resolution#Privacy_and_security)
+Q. Whats DNS ? [Arch Wiki](https://wiki.archlinux.org/title/Domain_name_resolution#Privacy_and_security)
