@@ -1,0 +1,24 @@
+# https://github.com/AdguardTeam/dnsproxy/raw/master/config.yaml.dist
+# https://github.com/AdguardTeam/dnsproxy/tree/master
+
+# This is the yaml configuration file for dnsproxy with minimal working
+# configuration, all the options available can be seen with ./dnsproxy --help.
+# To use it within dnsproxy specify the --config-path=/<path-to-config.yaml>
+# option.  Any other command-line options specified will override the values
+# from the config file.
+# --bootstrap '1.1.1.1:53' -l '::' -p '53' --http3 -u 'https://cloudflare-dns.com/dns-query' -u 'https://one.one.one.one/dns-query'
+
+---
+timeout: "10s"
+bootstrap:
+  - "1.1.1.1:53"
+listen-addrs:
+  - "::"
+http3: true
+upstream:
+  - https://cloudflare-dns.com/dns-query
+  - https://one.one.one.one/dns-query
+  - https://1.0.0.1/dns-query
+  - https://1.1.1.1/dns-query
+  - https://2606:4700:4700::1111/dns-query
+  - https://2606:4700:4700::1001/dns-query
