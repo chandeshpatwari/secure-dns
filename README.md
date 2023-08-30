@@ -8,4 +8,4 @@
 
 
 Q. Whats DNS ? [Arch Wiki](https://wiki.archlinux.org/title/Domain_name_resolution#Privacy_and_security)
-- https://en.wikipedia.org/wiki/Comparison_of_DNS_server_software)
+- https://en.wikipedia.org/wiki/Comparison_of_DNS_server_software
