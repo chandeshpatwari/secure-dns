@@ -55,27 +55,74 @@ function WingetInstall {
     }
 }
 
+# Not Being Used
+function CheckInternetAccessDNS {
+    try {
+        $URLTORESOLVE = 'one.one.one.one'
+        $DNSResolve = [System.Net.Dns]::GetHostAddresses("$URLTORESOLVE")
+        if ($DNSResolve.Length -gt 0) {
+            Write-Host "DNS '$URLTOCHECK': Reachable" -ForegroundColor Green
+            Write-Host 'Resolved IPs :'
+            $DNSResolve.IPAddressToString | Sort-Object
+        }
+    } catch {
+        Write-Host "DNS '$URLTOCHECK': UNREACHABLE" -ForegroundColor Red
+    }
+}
+## 
+
+
+function CheckInternetAccess {
+    $URLTOCHECKConnection = 'github.com'
+    if (Test-Connection -ComputerName $URLTOCHECKConnection -BufferSize 2 -Count 1 -ErrorAction SilentlyContinue -Quiet) {
+        Write-Host 'Internet access is available.' -ForegroundColor Green
+        return $true
+    } else {
+        Write-Host 'No internet access detected.' -ForegroundColor Red
+        return $false
+    }
+}
+
 function CheckAndInstall {
     CheckRunningStatus
-    if ($wingetAvailable) {
-        if ((Read-Host "$InstallUpdate using Winget?(y/n)").ToLower() -eq 'y') {
-            WingetInstall
-        } else {
-            $latestjson = Invoke-RestMethod -Uri "https://api.github.com/repos/$apiurl"
-            $Windows64 = $latestjson.assets | Where-Object { $_.Name -match "$packagestring" }
-            $latestVersion = [version]::Parse([regex]::Matches(($latestjson.tag_name), '\d+\.\d+\.\d+').Value)
-            $currentVersion = [Version]($isinstalled.Version)
-            if ($currentVersion -eq $latestVersion) {
-                Write-Host "Latest version is installed: $latestVersion"
+    $internetAccess = CheckInternetAccess
+    if ($internetAccess) {
+
+        if ($wingetAvailable) {
+            if ((Read-Host "$InstallUpdate using Winget?(y/n)").ToLower() -eq 'y') {
+                WingetInstall
             } else {
-                Write-Host "$InstallUpdate $Command : $latestVersion"
-                $downloadPath = "$env:USERPROFILE\Downloads\$($Windows64.name)"
-                # Start-BitsTransfer -Source $($Windows64.browser_download_url) -Destination $downloadPath
-                FreePort53
-                Expand-Archive -Path $downloadPath -DestinationPath $InstallationPath -Force
-                CreateUninstall; AfterInstall
+                $latestjson = Invoke-RestMethod -Uri "https://api.github.com/repos/$apiurl"
+                $Windows64 = $latestjson.assets | Where-Object { $_.Name -match "$packagestring" }
+                $latestVersion = [version]::Parse([regex]::Matches(($latestjson.tag_name), '\d+\.\d+\.\d+').Value)
+                $currentVersion = [Version]($isinstalled.Version)
+
+                if ($?) {
+                    if ($currentVersion -eq $latestVersion) {
+                        Write-Host "Latest version is installed: $latestVersion"
+                    } else {
+                        Write-Host "$InstallUpdate $Command : $latestVersion"
+                        $downloadPath = "$env:USERPROFILE\Downloads\$($Windows64.name)"
+        
+                        Start-BitsTransfer -Source $($Windows64.browser_download_url) -Destination $downloadPath
+        
+                        if ($?) {
+                            # Proceed with the rest of the installation logic
+                            FreePort53
+                            Expand-Archive -Path $downloadPath -DestinationPath $InstallationPath -Force
+                            CreateUninstall
+                            AfterInstall
+                        } else {
+                            Write-Host 'Error occurred during BITS transfer.'
+                        }
+                    }
+                } else {
+                    Write-Host 'Error occurred during Invoke-RestMethod.'
+                }
             }
         }
+    } else {
+        Write-Host 'Github Unreachable' 
     }
 }
 
