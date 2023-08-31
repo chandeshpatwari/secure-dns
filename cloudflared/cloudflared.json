@@ -1,0 +1,10 @@
+{
+  "Command": "cloudflared",
+  "Application": "cloudflared.exe",
+  "PackageName": "cloudflared",
+  "PackageIdentifier": "Cloudflare.cloudflared",
+  "Publisher": "cloudflare",
+  "apiurl": "cloudflare/cloudflared/releases/latest",
+  "packagestring": "windows-amd64.msi",
+  "path": ""
+}
