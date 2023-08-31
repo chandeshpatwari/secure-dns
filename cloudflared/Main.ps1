@@ -31,8 +31,11 @@ function Main {
         SetUI
         Write-Host 'Loading...'
         $isinstalled = Get-Package -Name "$PackageName" -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
+        $UninstallKey = $isinstalled.TagId
+
         Clear-Host
         
+
         # Determine whether to start or stop the app
         if (Get-Process -Name $Command -ErrorAction SilentlyContinue) {
             $StartStop = 'Stop'; $StartStopCommand = 'Stop-App'

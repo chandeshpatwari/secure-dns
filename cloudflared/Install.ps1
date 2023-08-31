@@ -13,8 +13,6 @@ function CheckRunningStatus {
 
 # 
 function AfterInstall {
-    SetToPath
-    # Setup 
     if ($installorupdate -eq 'Install') {
         QuickStart
     } else {
@@ -25,7 +23,7 @@ function AfterInstall {
     }
     # Run
     if ((Read-Host "Start $Application?(y/n)").ToLower() -eq 'y') {
-        Start-ScheduledTask -TaskName $Command
+        Get-ScheduledTask -TaskName $Command -ErrorAction SilentlyContinue | Start-ScheduledTask -Verbose
     }
 }
 
@@ -39,19 +37,49 @@ function WingetInstall {
         winget uninstall $PackageIdentifier
         winget install $PackageIdentifier
     }
+}
 
-    if ($LASTEXITCODE -eq '0') {
-        FreePort53
-        # Copy Files to Path instead of Creating Links this wil allow seamless Updates.
-        $AppLink = "$env:LOCALAPPDATA\Microsoft\WinGet\Links\$Application"
-        New-Item -Path $InstallationPath -ItemType Directory -Force | Out-Null
-        Copy-Item -Path $((Get-Item (Get-Item -Path $AppLink).Target).DirectoryName) -Destination $InstallationPath -Recurse -Force
+# 
 
-        # Remove Link (to run the executable from proper directory)
-        Remove-Item $AppLink -Force 
-        
-        # After Install
-        UninstallFile; AfterInstall
+function UpdateVersion {
+    $registryPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{$UninstallKey}"
+    if (!(Test-Path $registryPath)) {
+        New-Item -Path $registryPath -Force -Verbose
+    }
+
+    $latestVersion = [version]::Parse([regex]::Matches((& $Application --version), '\d+\.\d+\.\d+').Value)
+    if ($latestVersion) {
+        Set-ItemProperty -Path $registryPath -Name 'DisplayVersion' -Value "$latestVersion" -Type String -Verbose
+    }    
+}
+# Update/Install
+function UpdateProgram {
+    param (
+        [string]$UpdateMethod
+    )
+
+    if ($UpdateMethod -eq 'a') {
+        $UpdateMethod = Read-Host "Press 'g' to use GitHub (Small Download Size), 's' to Self Update"
+    }
+
+    if ($UpdateMethod -eq 'g') {
+        $Windows64 = $latestjson.assets | Where-Object { $_.Name -match "$packagestring" }
+        $downloadPath = Join-Path $env:USERPROFILE "Downloads\$($Windows64.name)"
+        Start-BitsTransfer -Source $($Windows64.browser_download_url) -Destination $downloadPath
+        if ($?) {
+            & $downloadPath
+        } else {
+            Write-Host 'Unsucessful Download'
+        }     
+        return $?  # Return the exit code of Start-Process
+    } elseif ($UpdateMethod -eq 's') {
+
+        Write-Host 'Please Wait....'
+        & $Application update; if ($LASTEXITCODE -eq '0') {
+            UpdateVersion
+            Write-Output 'hi'
+            return $?
+        }
     }
 }
 
@@ -71,7 +99,6 @@ function CheckInternetAccessDNS {
 }
 ## 
 
-
 function CheckInternetAccess {
     $URLTOCHECKConnection = 'github.com'
     if (Test-Connection -ComputerName $URLTOCHECKConnection -BufferSize 2 -Count 1 -ErrorAction SilentlyContinue -Quiet) {
@@ -87,33 +114,29 @@ function CheckAndInstall {
     CheckRunningStatus
     $internetAccess = CheckInternetAccess
     if ($internetAccess) {
-
         if ($wingetAvailable) {
             if ((Read-Host "$InstallUpdate using Winget?(y/n)").ToLower() -eq 'y') {
                 WingetInstall
             } else {
+                #$currentVersion = [Version]($isinstalled.Version)
+                $currentVersion = [version]::Parse([regex]::Matches((& $Application --version), '\d+\.\d+\.\d+').Value)
                 $latestjson = Invoke-RestMethod -Uri "https://api.github.com/repos/$apiurl"
-                $Windows64 = $latestjson.assets | Where-Object { $_.Name -match "$packagestring" }
                 $latestVersion = [version]::Parse([regex]::Matches(($latestjson.tag_name), '\d+\.\d+\.\d+').Value)
-                $currentVersion = [Version]($isinstalled.Version)
-
                 if ($?) {
-                    if ($currentVersion -eq $latestVersion) {
+                    if ($currentVersion -lt $latestVersion) {
                         Write-Host "Latest version is installed: $latestVersion"
                     } else {
                         Write-Host "$InstallUpdate $Command : $latestVersion"
-                        $downloadPath = "$env:USERPROFILE\Downloads\$($Windows64.name)"
-        
-                        Start-BitsTransfer -Source $($Windows64.browser_download_url) -Destination $downloadPath
-        
-                        if ($?) {
-                            # Proceed with the rest of the installation logic
-                            FreePort53
-                            Expand-Archive -Path $downloadPath -DestinationPath $InstallationPath -Force
-                            CreateUninstall
-                            AfterInstall
+                        if ($InstallUpdate -eq 'Update') {
+                            $Updateresult = UpdateProgram -UpdateMethod 'a'
                         } else {
-                            Write-Host 'Error occurred during BITS transfer.'
+                            $Updateresult = UpdateProgram -UpdateMethod 'g'
+                        }
+                        if ($Updateresult -eq $True) {
+                            Write-Host 'Latest Version Installed.'
+                            
+                        } else {
+                            Write-Host 'Error occurred during Installation.'
                         }
                     }
                 } else {
@@ -127,66 +150,15 @@ function CheckAndInstall {
 }
 
 
-function UninstallFile {
-    @"
-@echo off
-setlocal
-
-:: Check if running with admin privileges
-net session >nul 2>&1
-if %errorLevel% == 0 (
-    Write-Output Running with admin privileges.
-) else (
-    Write-Output Not running with admin privileges. Restarting with admin privileges...
-    powershell -Command "Start-Process '%~0' -Verb RunAs"
-    exit
-)
-
-:: Your script's main code goes here
-reg DELETE "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$UninstallKey" /f
-taskkill /F /IM "$Application"
-rmdir /S /Q "%LOCALAPPDATA%\Programs\$Command"
-
-:: Self-deletion
-del "%~f0"
-
-"@ | Out-File -FilePath "$datapath\Uninstall.bat" -Encoding Default -Force
-}
-
-function CreateUninstall {
-    $registryPath = "HKCU:\$UninstallPath\$UninstallKey"
-
-    # Check if the registry key exists, create it if not
-    if (-not (Test-Path $registryPath)) {
-        New-Item -Path $registryPath -Force -Verbose
-    }
-
-    # Remove existing registry values if needed
-    $UninstallKey = $isinstalled.TagId
-    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{$UninstallKey}"
-
-    Remove-ItemProperty -Path $registryPath -Name 'DisplayVersion' -ErrorAction SilentlyContinue -Verbose
-
-    if ($latestVersion) {
-        Set-ItemProperty -Path $registryPath -Name 'DisplayVersion' -Value "$latestVersion" -Type String -Verbose
-    }
-    Set-ItemProperty -Path $registryPath -Name 'UninstallString' -Value "$datapath\Uninstall.bat" -Type String -Verbose
-    Set-ItemProperty -Path $registryPath -Name 'DisplayName' -Value "$PackageName" -Type String -Verbose
-    Set-ItemProperty -Path $registryPath -Name 'Publisher' -Value "$Publisher" -Type String -Verbose
-    Set-ItemProperty -Path $registryPath -Name 'InstallDate' -Value "$dateString" -Type String -Verbose
-    Set-ItemProperty -Path $registryPath -Name 'InstallLocation' -Value "$InstallationPath" -Type String -Verbose
-    UninstallFile
-}
-
-
 # Uninstall
 function Uninstall {
     if ($isinstalled) {
         if ($wingetAvailable) {
             winget uninstall $PackageIdentifier 
+        } else {
+            Start-Process -FilePath 'msiexec.exe' -ArgumentList "/X{$UninstallKey}" -Wait
         }
-        $UninstallKey = $isinstalled.TagId
-        Start-Process -FilePath 'msiexec.exe' -ArgumentList "/X{$UninstallKey}" -Wait
+        
         UndoQuickStart
     } else {
         Write-Host 'Not Installed'
