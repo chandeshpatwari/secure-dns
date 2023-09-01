@@ -1,17 +1,4 @@
-# Start if APP is installed but not running, else set DNS to Cloudlflare Plain
-function CheckRunningStatus {
-    if (Get-Command -Name $Command -ErrorAction SilentlyContinue) {
-        if (-not(Get-Process -Name $Command -ErrorAction SilentlyContinue)) {
-            FreePort53; ConfigureSystemDNS
-            Start-Process "$Application" -ArgumentList "--config-path=$PSScriptRoot\config.yaml" -WindowStyle Minimized
-        }
-    } else {
-        Write-Host 'Setting DNS to [Cloudflare Plain] instead.'
-        Get-NetAdapter -Physical | Set-DnsClientServerAddress -ServerAddresses @('1.1.1.1', '1.0.0.1', '2606:4700:4700::1111', '2606:4700:4700::1001')
-    }
-}
 
-# 
 function AfterInstall {
     if ($installorupdate -eq 'Install') {
         QuickStart
@@ -22,9 +9,7 @@ function AfterInstall {
         }
     }
     # Run
-    if ((Read-Host "Start $Application?(y/n)").ToLower() -eq 'y') {
-        Get-ScheduledTask -TaskName $Command -ErrorAction SilentlyContinue | Start-ScheduledTask -Verbose
-    }
+    cloudflared.exe service install
 }
 
 # Use Winget
@@ -111,7 +96,6 @@ function CheckInternetAccess {
 }
 
 function CheckAndInstall {
-    CheckRunningStatus
     $internetAccess = CheckInternetAccess
     if ($internetAccess) {
         if ($wingetAvailable) {
@@ -119,11 +103,13 @@ function CheckAndInstall {
                 WingetInstall
             } else {
                 #$currentVersion = [Version]($isinstalled.Version)
-                $currentVersion = [version]::Parse([regex]::Matches((& $Application --version), '\d+\.\d+\.\d+').Value)
+                if ($isinstalled) {
+                    $currentVersion = [version]::Parse([regex]::Matches((& $Application --version), '\d+\.\d+\.\d+').Value)
+                }
                 $latestjson = Invoke-RestMethod -Uri "https://api.github.com/repos/$apiurl"
                 $latestVersion = [version]::Parse([regex]::Matches(($latestjson.tag_name), '\d+\.\d+\.\d+').Value)
                 if ($?) {
-                    if ($currentVersion -lt $latestVersion) {
+                    if ($currentVersion -eq $latestVersion) {
                         Write-Host "Latest version is installed: $latestVersion"
                     } else {
                         Write-Host "$InstallUpdate $Command : $latestVersion"
@@ -158,7 +144,6 @@ function Uninstall {
         } else {
             Start-Process -FilePath 'msiexec.exe' -ArgumentList "/X{$UninstallKey}" -Wait
         }
-        
         UndoQuickStart
     } else {
         Write-Host 'Not Installed'

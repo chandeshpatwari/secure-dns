@@ -11,7 +11,17 @@ function ShowSetupMenu {
     Write-Host '7. Exit'
 }
 
-
+function CheckRunningStatus {
+    if (Get-Command -Name $Command -ErrorAction SilentlyContinue) {
+        if (!(Get-Process -Name $Command -ErrorAction SilentlyContinue)) {
+            FreePort53; ConfigureSystemDNS
+            Start-Process "$Application" -ArgumentList 'proxy-dns' -WindowStyle Minimized
+        }
+    } else {
+        Write-Host 'Setting DNS to [Cloudflare Plain] instead.'
+        Get-NetAdapter -Physical | Set-DnsClientServerAddress -ServerAddresses @('1.1.1.1', '1.0.0.1', '2606:4700:4700::1111', '2606:4700:4700::1001')
+    }
+}
 
 function FreePort53 {
     Write-Host 'Stopping process using port 53' -ForegroundColor Green

@@ -2,6 +2,23 @@
 . "$PSScriptRoot\Install.ps1"
 . "$PSScriptRoot\SetPath.ps1"
 
+function CheckRunningStatus {
+    if (Get-Command -Name $Command -ErrorAction SilentlyContinue) {
+        if (!(Get-Process -Name $Command -ErrorAction SilentlyContinue)) {
+            FreePort53; ConfigureSystemDNS
+            if ((Get-Service -Name $Application).Status -ne 'Running') {
+                Get-Service -Name $Application | Start-Service -Verbose
+            } else {
+                Start-Process "$Application" -ArgumentList 'proxy-dns' -WindowStyle Hidden
+            }
+            
+        }
+    } else {
+        Write-Host 'Setting DNS to [Cloudflare Plain] instead.'
+        Get-NetAdapter -Physical | Set-DnsClientServerAddress -ServerAddresses @('1.1.1.1', '1.0.0.1', '2606:4700:4700::1111', '2606:4700:4700::1001')
+    }
+}
+
 function SetUI {
     $Host.UI.RawUI.BackgroundColor = 'Black'
     $Host.UI.RawUI.ForegroundColor = 'White'
@@ -29,6 +46,7 @@ function ShowMenu {
 function Main {
     do {
         SetUI
+        CheckRunningStatus
         Write-Host 'Loading...'
         $isinstalled = Get-Package -Name "$PackageName" -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
         $UninstallKey = $isinstalled.TagId
