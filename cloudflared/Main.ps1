@@ -6,12 +6,14 @@ function CheckRunningStatus {
     if (Get-Command -Name $Command -ErrorAction SilentlyContinue) {
         if (!(Get-Process -Name $Command -ErrorAction SilentlyContinue)) {
             FreePort53; ConfigureSystemDNS
-            if ((Get-Service -Name $Application).Status -ne 'Running') {
-                Get-Service -Name $Application | Start-Service -Verbose
+            $CheckForService = Get-Service -Name $Application -ErrorAction SilentlyContinue
+            if ($CheckForService) {
+                if (($CheckForService).Status -ne 'Running') {
+                    Get-Service -Name $Application | Start-Service -Verbose
+                }
             } else {
-                Start-Process "$Application" -ArgumentList 'proxy-dns' -WindowStyle Hidden
+                Start-Process "$Application" -ArgumentList 'proxy-dns' #-WindowStyle Hidden
             }
-            
         }
     } else {
         Write-Host 'Setting DNS to [Cloudflare Plain] instead.'
@@ -50,7 +52,9 @@ function Main {
         Write-Host 'Loading...'
         $isinstalled = Get-Package -Name "$PackageName" -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
         $UninstallKey = $isinstalled.TagId
-
+        if ($isinstalled) {
+            $currentVersion = [version]::Parse([regex]::Matches((& $Application --version), '\d+\.\d+\.\d+').Value)
+        }
         Clear-Host
         
 

@@ -10,6 +10,7 @@ function AfterInstall {
     }
     # Run
     cloudflared.exe service install
+    New-Item -Path 'C:\Windows\system32\config\systemprofile\.cloudflared\config.yml' -Value "$datapath\config.yml" -ItemType SymbolicLink -Force -Verbose
 }
 
 # Use Winget
@@ -24,19 +25,7 @@ function WingetInstall {
     }
 }
 
-# 
 
-function UpdateVersion {
-    $registryPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{$UninstallKey}"
-    if (!(Test-Path $registryPath)) {
-        New-Item -Path $registryPath -Force -Verbose
-    }
-
-    $latestVersion = [version]::Parse([regex]::Matches((& $Application --version), '\d+\.\d+\.\d+').Value)
-    if ($latestVersion) {
-        Set-ItemProperty -Path $registryPath -Name 'DisplayVersion' -Value "$latestVersion" -Type String -Verbose
-    }    
-}
 # Update/Install
 function UpdateProgram {
     param (
@@ -61,7 +50,6 @@ function UpdateProgram {
 
         Write-Host 'Please Wait....'
         & $Application update; if ($LASTEXITCODE -eq '0') {
-            UpdateVersion
             Write-Output 'hi'
             return $?
         }
@@ -120,7 +108,6 @@ function CheckAndInstall {
                         }
                         if ($Updateresult -eq $True) {
                             Write-Host 'Latest Version Installed.'
-                            
                         } else {
                             Write-Host 'Error occurred during Installation.'
                         }
