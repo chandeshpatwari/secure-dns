@@ -14,12 +14,14 @@ Command : cloudflared.exe
 Config : $env:USERPROFILE\.cloudflared\config.yml
 Command : cloudflared.exe --config $env:USERPROFILE\.cloudflared\config.yml
 
-
 # Default ServerAddresses
 Config : -
 Command : cloudflared.exe proxy-dns
-> This One Doesn't Check if Port 53 is Pre-Engaged
 
 - https://github.com/cloudflare/cloudflared
 - https://wiki.archlinux.org/title/Cloudflared
 - https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/dns-over-https-client
+
+
+# cmd /c sc stop $Application
+#  cmd /c sc start $Application

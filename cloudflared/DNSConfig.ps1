@@ -1,25 +1,47 @@
 . "$PSScriptRoot\CreateUpstream.ps1"
 
-function ShowSetupMenu {
+function SetupMenu {
     Write-Host '------- DNS Service Setup Menu ----------'
-    Write-Host '1. Reset Config'
-    Write-Host '2. Remove Config'
-    Write-Host '3. Set Config'
-    Write-Host '4. Free Port 53'
-    Write-Host '5. Configure System DNS'
-    Write-Host '6. Setup Auto Start'
-    Write-Host '7. Exit'
+    Write-Host '1. Configure [3-6]'
+    Write-Host '2. Create/Edit config.yml'
+    Write-Host '3. Stop Process using port 53'
+    Write-Host '4. Configure System to use loopback address for DNS'
+    Write-Host '5. Set Service [Requires Restart]'
+    Write-Host '----------------'
+    Write-Host '6. UNDO DNS Service Setup'
+    Write-Host '7. <-- Back'
 }
 
-
+function CreateConfig {
+    $SetConfig = Read-Host "Press 'e' for DOH Cloudflare. 'c' to configure, or 'e' for edit yourself. Anything else to skip."
+    if ($SetConfig -eq 'e') {
+        Get-Content "$PSScriptRoot\config.yaml" | Set-Content -Path "$datapath\config.yml" -Force
+    } elseif ($SetConfig -eq 'c') {
+        $configContent = Get-Content "$PSScriptRoot\config.yaml"
+        $configContent += CreateLinks
+        $lastTwoLines = $configContent | Select-Object -Last 2
+        if ($lastTwoLines -match 'f' -and $lastTwoLines -match 'https://') {
+            $configContent = $configContent | Select-Object -SkipLast 2
+        }
+        if ((Read-Host 'Store Basic Logs?(y/n)') -eq 'y') { $configContent += "logDirectory:: $datapath" }
+        $configContent | Set-Content -Path "$datapath\config.yml" -Force
+    } elseif ($SetConfig -eq 'e') {
+        Add-Content '' -Path "$datapath\config.yml" -Force
+        notepad.exe "$datapath\config.yml"
+    } else {
+        $null
+    }
+}
 
 function FreePort53 {
     Write-Host 'Stopping process using port 53' -ForegroundColor Green
+    Get-Process -Name "$Command" -ErrorAction SilentlyContinue | Stop-Process -Force -Verbose
     $dnsConnections = Get-NetTCPConnection -LocalPort '53' -EA SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
     if ($dnsConnections) {
+        $Service53 = Get-CimInstance -ClassName Win32_Service | Where-Object { $_.ProcessId -eq $dnsConnections }
+        Get-Service $Service53.Name -Verbose | Set-Service -StartupType Manual -Status Stopped
         Get-Process -Id $dnsConnections -ErrorAction SilentlyContinue | Stop-Process -Verbose -Force
     }
-    Get-Process -Name "$Command" -ErrorAction SilentlyContinue | Stop-Process -Force -Verbose
 }
 
 function ConfigureSystemDNS {
@@ -28,106 +50,71 @@ function ConfigureSystemDNS {
     Get-NetAdapter -Physical | Set-DnsClientServerAddress -ServerAddresses @('127.0.0.1', '::1')
 }
 
-function FixDOH {
-    $fileContent = Get-Content "$datapath\config.yaml"
-    $lastTwoLines = $fileContent[-2..-1]
-
-    $condition1 = $lastTwoLines -match 'f'
-    $condition2 = $lastTwoLines -match '://'
-
-    if ($condition1 -and $condition2) {
-        $fileContent = $fileContent[0..($fileContent.Count - 3)]
-        $fileContent | Set-Content "$datapath\config.yaml"
-        Write-Host 'Last two lines removed.'
-    } else {
-        Write-Host 'Conditions not met. Nothing removed.'
-    }   
+function SetService {
+    $ServiceFilePath = "$env:SYSTEMROOT\system32\config\systemprofile\.cloudflared"
+    New-Item -Path $ServiceFilePath -ItemType Directory -Force -ErrorAction SilentlyContinue -Verbose
+    New-Item -Path "$ServiceFilePath\config.yml" -ItemType SymbolicLink -Value "$datapath\config.yml" -Force -Verbose
+    & $Application service install
+    Get-Service $Command
 }
 
-function CreateConfig {
-    $SetConfig = Read-Host "Press 'e' for DOH Cloudflare. 'c' to configure, or 'e' for edit yourself. Anything else to skip."
-    if ($SetConfig -eq 'e') {
-        Get-Content "$PSScriptRoot\config.yaml" | Set-Content -Path "$datapath\config.yaml" -Force
-    } elseif ($SetConfig -eq 'c') {
-        $SelectedConfig = CreateLinks
-        $defaultConfig = Get-Content "$PSScriptRoot\config-base.yaml"
-        $defaultConfig += $SelectedConfig
-        $ShowVerbose = Read-Host 'Show Verbose Logs?(y/n)'
-        if ($ShowVerbose -eq 'y') {
-            $defaultConfig += 'verbose: true'
-        }
-        $storelog = Read-Host 'Store Basic Logs?(y/n)'
-        if ($storelog -eq 'y') {
-            $defaultConfig += "output: $datapath\log.txt"
-        }
-        $defaultConfig | Set-Content -Path "$datapath\config.yaml" -Force
-        FixDOH
-    } elseif ($SetConfig -eq 'e') {
-        Add-Content '' -Path "$datapath\config.yaml" -Force
-        notepad.exe "$datapath\config.yaml"
-    } else {
-        $null
-    }
-}
-function AutoStart {
-    @"
-CreateObject("WScript.Shell").Run "$Application --config-path=$datapath\config.yaml", 1, True
-"@  | Out-File -FilePath "$datapath\start-service.vbs" -Force
-    $taskAction = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument "$datapath\start-service.vbs"
-    $trigger = New-ScheduledTaskTrigger -AtLogOn
-    $taskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -Priority 1 -AllowStartIfOnBatteries
-    Register-ScheduledTask -Action $taskAction -Trigger $trigger -TaskName "$Command" -Settings $taskSettings -Force | Out-Null
-    Enable-ScheduledTask -TaskName "$command"
+function QuickSetup { CreateConfig; FreePort53; ConfigureSystemDNS; SetService }
+
+# Undo 
+function UndoSetupMenu {
+    Write-Host '------- UNDO DNS Service Setup ----------'
+    Write-Host '1. Undo Configure [2,3,4]'
+    Write-Host '2. Configure System DNS to Default [3-6]'
+    Write-Host '3. Remove Service [Requires Restart]'
+    Write-Host '4. Remove config.yml'
+    Write-Host '5. <-- Back'
 }
 
-function QuickStart {
-    FreePort53; ConfigureSystemDNS; CreateConfig; AutoStart
-}
-
-function UndoQuickStart {
-    Write-Host 'Removing Config'
-    Get-ScheduledTask -TaskName "$Application" -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
-    Get-NetAdapter -Physical | Set-DnsClientServerAddress -ResetServerAddresses
-    Remove-Item -Path "$datapath" -Recurse -Force -Verbose
-}
-
-function StartSetup {
+function UndoConfigureSystemDNS { Get-NetAdapter -Physical | Set-DnsClientServerAddress -ResetServerAddresses -Verbose }
+function UndoSetService { StopApp; & $Application service uninstall }
+function UndoCreateConfig { Remove-Item -Path "$datapath\config.yml" -Recurse -Force -Verbose }
+function UndoQuickStart { UndoConfigureSystemDNS; UndoSetService; UndoCreateConfig }
+function UndoSetup {
     Clear-Host
     do {
-        ShowSetupMenu
-        $SetupChoice = Read-Host 'Enter your choice'
+        UndoSetupMenu
+        $UndoSetupChoice = Read-Host 'Enter your choice'
 
-        switch ($SetupChoice) {
-            '1' {
-                QuickStart 
-            }
-            '2' {
-                UndoQuickStart 
-            }
-            '3' {
-                CreateConfig                
-            }
-            '4' {
-                FreePort53 
-                
-            }
-            '5' {
-                ConfigureSystemDNS 
-                
-            }
-            '6' {
-                AutoStart
-            }
-            '7' {
-                return 
-            }
+        switch ($UndoSetupChoice) {
+            '1' { UndoQuickStart }
+            '2' { UndoConfigureSystemDNS }
+            '3' { UndoSetService }
+            '4' { UndoCreateConfig }
+            '5' { return }
             default {
                 Write-Host 'Invalid choice. Please select a valid option.' 
             }
         }
         Pause
         Clear-Host
-    } while ($SetupChoice -ne '6')
+    } while ($SetupChoice -ne '5')
 }
+## End Undo
 
+function StartSetup {
+    Clear-Host
+    do {
+        SetupMenu
+        $SetupChoice = Read-Host 'Enter your choice'
 
+        switch ($SetupChoice) {
+            '1' { QuickSetup }
+            '2' { CreateConfig }
+            '3' { FreePort53 }
+            '4' { ConfigureSystemDNS }
+            '5' { SetService }
+            '6' { UndoSetup }
+            '7' { return }
+            default {
+                Write-Host 'Invalid choice. Please select a valid option.' 
+            }
+        }
+        Pause
+        Clear-Host
+    } while ($SetupChoice -ne '7')
+}

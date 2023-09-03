@@ -1,0 +1,6 @@
+# cloudflared proxy-dns --help
+---
+proxy-dns: true
+proxy-dns-port: 53
+proxy-dns-address: "::"
+proxy-dns-upstream:
