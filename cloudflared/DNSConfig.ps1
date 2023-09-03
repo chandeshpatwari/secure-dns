@@ -18,6 +18,7 @@ function CreateConfig {
         Get-Content "$PSScriptRoot\config.yaml" | Set-Content -Path "$datapath\config.yml" -Force
     } elseif ($SetConfig -eq 'c') {
         $configContent = Get-Content "$PSScriptRoot\config.yaml"
+        $configContent += 'proxy-dns-upstream:'
         $configContent += CreateLinks
         $lastTwoLines = $configContent | Select-Object -Last 2
         if ($lastTwoLines -match 'f' -and $lastTwoLines -match 'https://') {
@@ -51,14 +52,12 @@ function ConfigureSystemDNS {
 }
 
 function SetService {
-    $ServiceFilePath = "$env:SYSTEMROOT\system32\config\systemprofile\.cloudflared"
     New-Item -Path $ServiceFilePath -ItemType Directory -Force -ErrorAction SilentlyContinue -Verbose
     New-Item -Path "$ServiceFilePath\config.yml" -ItemType SymbolicLink -Value "$datapath\config.yml" -Force -Verbose
-    & $Application service install
-    Get-Service $Command
+    if ($isinstalled) { & $Application service install; Get-Service $Command }
 }
 
-function QuickSetup { CreateConfig; FreePort53; ConfigureSystemDNS; SetService }
+function QuickSetup { CreateConfig; FreePort53; ConfigureSystemDNS; SetService; ipconfig /flushdns }
 
 # Undo 
 function UndoSetupMenu {
@@ -71,9 +70,14 @@ function UndoSetupMenu {
 }
 
 function UndoConfigureSystemDNS { Get-NetAdapter -Physical | Set-DnsClientServerAddress -ResetServerAddresses -Verbose }
-function UndoSetService { StopApp; & $Application service uninstall }
-function UndoCreateConfig { Remove-Item -Path "$datapath\config.yml" -Recurse -Force -Verbose }
-function UndoQuickStart { UndoConfigureSystemDNS; UndoSetService; UndoCreateConfig }
+function UndoSetService { 
+    StopApp; & $Application service uninstall 
+    cmd /c sc delete $Command
+    Remove-Item -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\EventLog\Application\Cloudflared' -Recurse -Force -ErrorAction SilentlyContinue
+    Get-EventLog -List | ForEach-Object { Clear-EventLog -LogName $_.Log }
+}
+function UndoCreateConfig { ("$ServiceFilePath", "$datapath\config.yml") | ForEach-Object { Remove-Item -Path $_ -Recurse -Force -Verbose } }
+function UndoQuickStart { UndoConfigureSystemDNS; UndoSetService; UndoCreateConfig; ipconfig /flushdns }
 function UndoSetup {
     Clear-Host
     do {

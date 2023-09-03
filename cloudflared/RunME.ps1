@@ -19,6 +19,7 @@ foreach ($property in $PackageData.PSObject.Properties) {
 $datapath = "$env:USERPROFILE\.$Command"
 $InstallationPath = "$env:LOCALAPPDATA\Programs\$Command"
 $binarypath = "$InstallationPath\$path"
+$ServiceFilePath = "$env:SYSTEMROOT\system32\config\systemprofile\.$Command"
 
 # Date
 $dateString = (Get-Date).ToString('yyyyMMdd')
